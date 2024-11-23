@@ -1,0 +1,7 @@
+Nuclear Repulsion Energy: 3.27869 eV.
+Total Energy: -128.703 eV.
+Nuclear Repulsion Energy: 3.27869 eV.
+Total Energy: -128.703 eV.
+Gradient: 
+[matrix size: 0x0]
+
