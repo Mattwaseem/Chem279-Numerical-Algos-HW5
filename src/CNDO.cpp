@@ -3,6 +3,8 @@
 #include <cmath>
 #include <iostream>
 
+const double AU_TO_EV = 27.2114;
+
 CNDO::CNDO(Molecule molecule, arma::mat overlapMatrix)
     : molecule(molecule), overlapMatrix(overlapMatrix)
 {
@@ -69,9 +71,10 @@ int CNDO::calcNumAOs(std::string chemSym)
 
 double CNDO::calc2eIntegral(AO AO1, AO AO2)
 {
-    if (!(accu(AO1.lmn) == 0 && accu(AO2.lmn) == 0))
+    if (!(arma::accu(AO1.lmn) == 0 && arma::accu(AO2.lmn) == 0))
     {
-        std::cout << "Error: 2e integrals only implemented for s orbitals" << std::endl;
+        std::cerr << "Error: 2e integrals only implemented for s orbitals" << std::endl;
+        return 0.0;
     }
 
     arma::vec dprime_a = AO1.contraction_coeffs % AO1.norm_constants;
@@ -141,7 +144,7 @@ double CNDO::calcNuclearRepulsionEnergy()
         for (int B = 0; B < A; B++)
         {
             double distance = arma::norm(molecule.coordinates.row(A) - molecule.coordinates.row(B), 2);
-            nuclearRepulsionEnergy += molecule.atomValences(A) * molecule.atomValences(B) / distance;
+            nuclearRepulsionEnergy += molecule.atomValences[A] * molecule.atomValences[B] / distance;
         }
     }
     return nuclearRepulsionEnergy;
@@ -153,7 +156,7 @@ arma::vec CNDO::calcTotalDensity()
     for (int mu = 0; mu < molecule.nBasisFunctions; mu++)
     {
         int A = aoIndexToAtom[mu];
-        totalDensity(A) += alphaDensityMat(mu, mu) + betaDensityMat(mu, mu);
+        totalDensity[A] += alphaDensityMat(mu, mu) + betaDensityMat(mu, mu);
     }
     return totalDensity;
 }
@@ -171,8 +174,8 @@ arma::mat CNDO::calcFockMat(arma::mat densityMat)
             std::string chemSymB = molecule.atomicSymbols[B];
             double gammaAA = gammaMatrix(A, A);
             double gammaAB = gammaMatrix(A, B);
-            double pAA = totalDensity(A);
-            double ZA = molecule.atomValences(A);
+            double pAA = totalDensity[A];
+            double ZA = molecule.atomValences[A];
             if (mu == nu)
             {
                 std::string AO_type = molecule.basisFunctionsList[mu].AO_type;
@@ -181,8 +184,8 @@ arma::mat CNDO::calcFockMat(arma::mat densityMat)
                 {
                     if (A != C)
                     {
-                        double pCC = totalDensity(C);
-                        double ZC = molecule.atomValences(C);
+                        double pCC = totalDensity[C];
+                        double ZC = molecule.atomValences[C];
                         double gammaAC = gammaMatrix(A, C);
                         fockMat(mu, nu) += (pCC - ZC) * gammaAC;
                     }
@@ -209,8 +212,7 @@ arma::mat CNDO::calcHCoreMat()
             std::string chemSymA = molecule.atomicSymbols[A];
             std::string chemSymB = molecule.atomicSymbols[B];
             double gammaAA = gammaMatrix(A, A);
-            double gammaAB = gammaMatrix(A, B);
-            double ZA = molecule.atomValences(A);
+            double ZA = molecule.atomValences[A];
             if (mu == nu)
             {
                 std::string AO_type = molecule.basisFunctionsList[mu].AO_type;
@@ -219,7 +221,7 @@ arma::mat CNDO::calcHCoreMat()
                 {
                     if (A != C)
                     {
-                        double ZC = molecule.atomValences(C);
+                        double ZC = molecule.atomValences[C];
                         double gammaAC = gammaMatrix(A, C);
                         hCoreMat(mu, nu) -= ZC * gammaAC;
                     }
@@ -289,8 +291,6 @@ void CNDO::scfCycle()
         {
             converged = true;
             totalEnergy = calcTotalEnergy();
-            std::cout << "Nuclear Repulsion Energy: " << nuclearRepulsionEnergy << " eV." << std::endl;
-            std::cout << "Total Energy: " << totalEnergy << " eV." << std::endl;
         }
     }
 }
@@ -319,14 +319,56 @@ arma::mat CNDO::calcYMatrix()
     {
         for (int B = 0; B < molecule.nAtoms; B++)
         {
-            Y(A, B) = 0.5 * totalDensity(A) * totalDensity(B);
+            Y(A, B) = 0.5 * totalDensity[A] * totalDensity[B];
         }
     }
     return Y;
 }
 
+arma::mat CNDO::calcOverlapGradientMat()
+{
+    arma::mat overlapGradientMat;
+    return overlapGradientMat;
+}
+
+arma::mat CNDO::calcGammaGradientMat()
+{
+    arma::mat gammaGradientMat;
+    return gammaGradientMat;
+}
+
+arma::mat CNDO::calcNuclearEnergyGradMat()
+{
+    arma::mat dE_nuclear = arma::zeros(molecule.nAtoms, 3);
+    for (int A = 0; A < molecule.nAtoms; A++)
+    {
+        for (int B = 0; B < A; B++)
+        {
+            arma::rowvec RA = molecule.coordinates.row(A);
+            arma::rowvec RB = molecule.coordinates.row(B);
+            arma::rowvec diff = RA - RB;
+            double distance = arma::norm(diff, 2);
+            if (distance > 1e-8)
+            {
+                arma::rowvec dE_dRA = (molecule.atomValences[A] * molecule.atomValences[B]) * (diff / (distance * distance * distance));
+                arma::rowvec dE_dRB = -dE_dRA;
+                dE_nuclear.row(A) += dE_dRA;
+                dE_nuclear.row(B) += dE_dRB;
+            }
+        }
+    }
+    return dE_nuclear;
+}
+
 arma::mat CNDO::calcTotalEnergyGradMat()
 {
-    // Implement gradient calculation here
-    return arma::mat();
+    arma::mat dE_nuclear = calcNuclearEnergyGradMat();
+    arma::mat dS = calcOverlapGradientMat();
+    arma::mat dGamma = calcGammaGradientMat();
+    arma::mat X = calcXMatrix();
+    arma::mat Y = calcYMatrix();
+
+    arma::mat gradient = arma::zeros(molecule.nAtoms, 3);
+
+    return gradient;
 }

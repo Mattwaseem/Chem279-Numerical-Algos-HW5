@@ -1,4 +1,3 @@
-
 #ifndef CNDO_H
 #define CNDO_H
 
@@ -49,6 +48,10 @@ private:
     arma::mat calcDensityMat(arma::mat coeffMatA, std::string type);
     arma::mat calcXMatrix();
     arma::mat calcYMatrix();
+
+    arma::mat calcOverlapGradientMat();
+    arma::mat calcGammaGradientMat();
+    arma::mat calcNuclearEnergyGradMat();
 };
 
 #endif // CNDO_H
